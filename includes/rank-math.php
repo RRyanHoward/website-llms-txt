@@ -4,7 +4,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Include the provider class
-require_once plugin_dir_path(__FILE__) . 'providers/class-llms-provider.php';
+require_once plugin_dir_path(__FILE__) . 'class-llms-provider.php';
 
 /**
  * Register the LLMS sitemap provider with Rank Math
