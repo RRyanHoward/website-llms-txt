@@ -53,6 +53,8 @@ class LLMS_Generator {
         // Force initial generation
         $content = $this->generate_content();
 
+        $content = mb_convert_encoding($content, 'UTF-8', 'auto');
+
         // Create file using WP_Filesystem
         $this->write_file($content);
     }
@@ -64,6 +66,7 @@ class LLMS_Generator {
 
         if ($this->wp_filesystem) {
             $file_path = ABSPATH . 'llms.txt';
+            $content = "\xEF\xBB\xBF" . $content;
             $this->wp_filesystem->put_contents($file_path, $content, FS_CHMOD_FILE);
         }
     }
