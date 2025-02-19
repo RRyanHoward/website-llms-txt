@@ -24,7 +24,7 @@ class LLMS_Yoast_Integration {
     	$sitemap = get_query_var('sitemap');
     	if ($sitemap === 'llms') {
         	header('Content-Type: application/xml; charset=utf-8');
-        	echo esc_xml($this->generate_sitemap());
+        	echo $this->generate_sitemap();
         	exit;
     	}
 	}
@@ -47,21 +47,24 @@ class LLMS_Yoast_Integration {
             'priority' => '0.8'
         );
 
-        $sitemap = '<?xml version="1.0" encoding="UTF-8"?>';
-        $sitemap .= '<?xml-stylesheet type="text/xsl" href="' . esc_url(home_url('main-sitemap.xsl')) . '"?>';
-        $sitemap .= '<urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" ';
-        $sitemap .= 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" ';
-        $sitemap .= 'xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 ';
-        $sitemap .= 'http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">';
-        $sitemap .= "\n\t<url>\n";
-        $sitemap .= "\t\t<loc>" . esc_url($url['loc']) . "</loc>\n";
-        $sitemap .= "\t\t<lastmod>" . esc_xml($url['lastmod']) . "</lastmod>\n";
-        $sitemap .= "\t\t<changefreq>" . esc_xml($url['changefreq']) . "</changefreq>\n";
-        $sitemap .= "\t\t<priority>" . esc_xml($url['priority']) . "</priority>\n";
-        $sitemap .= "\t</url>\n";
-        $sitemap .= "</urlset>";
+        $xsl_url = esc_url(home_url('main-sitemap.xsl'));
+        $loc = esc_url($url['loc']);
+        $lastmod = esc_xml($url['lastmod']);
+        $changefreq = esc_xml($url['changefreq']);
+        $priority = esc_xml($url['priority']);
 
-        return $sitemap;
+        return <<<SEO
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet type="text/xsl" href="{$xsl_url}"?>
+<urlset xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xsi:schemaLocation="http://www.sitemaps.org/schemas/sitemap/0.9 http://www.sitemaps.org/schemas/sitemap/0.9/sitemap.xsd">
+    <url>
+        <loc>{$loc}</loc>
+        <lastmod>{$lastmod}</lastmod>
+        <changefreq>{$changefreq}</changefreq>
+        <priority>{$priority}</priority>
+    </url>
+</urlset>
+SEO;
     }
 
     public function add_to_index($sitemap) {
