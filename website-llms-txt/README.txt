@@ -4,7 +4,7 @@ Tags: llm, ai, seo, rankmath, yoast
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.2
-Stable tag: 2.0.0
+Stable tag: 3.0.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -65,3 +65,9 @@ You can choose between immediate, daily, or weekly updates in the plugin setting
 
 = 2.0.0 =
 Major update with new features and improvements. Adds custom post type ordering and enhanced cache management.
+
+= 3.0.0 =
+Fixed character encoding issue in llms.txt on the Korean site.
+Resolved support-reported issues with llms-sitemap.xml.
+Updated the class cleaner file to the latest version.
+The newest version is now available on AgentVoice.com and is compatible with other shortcodes.
