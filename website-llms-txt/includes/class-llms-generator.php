@@ -103,7 +103,13 @@ class LLMS_Generator {
                 'posts_per_page' => $this->settings['max_posts'],
                 'post_status' => 'publish',
                 'orderby' => 'date',
-                'order' => 'DESC'
+                'order' => 'DESC',
+                'meta_query'     => array(
+                    array(
+                        'key'     => '_yoast_wpseo_meta-robots-nofollow',
+                        'compare' => 'NOT EXISTS'
+                    )
+                )
             ));
 
             if (!empty($posts)) {
