@@ -76,50 +76,70 @@ class LLMS_Core {
     }
 
     public function sanitize_settings($value) {
-   if (!is_array($value)) {
-       return array();
-   }
-   $clean = array();
-   
-   // Ensure post_types is an array and contains only valid post types
-   $clean['post_types'] = array();
-   if (isset($value['post_types']) && is_array($value['post_types'])) {
-       $valid_types = get_post_types(array('public' => true));
-       foreach ($value['post_types'] as $type) {
-           if (in_array($type, $valid_types) && $type !== 'attachment' && $type !== 'llms_txt') {
-               $clean['post_types'][] = sanitize_key($type);
-           }
-       }
-   }
-   
-   // Sanitize max posts
-   $clean['max_posts'] = isset($value['max_posts']) ? 
-       min(max(absint($value['max_posts']), 1), 1000) : 100;
-   
-   // Sanitize boolean values
-   $clean['include_meta'] = !empty($value['include_meta']);
-   $clean['include_excerpts'] = !empty($value['include_excerpts']);
-   $clean['include_taxonomies'] = !empty($value['include_taxonomies']);
-   
-   // Sanitize update frequency
-   $clean['update_frequency'] = isset($value['update_frequency']) && 
-       in_array($value['update_frequency'], array('immediate', 'daily', 'weekly')) ? 
-       sanitize_key($value['update_frequency']) : 'immediate';
-   
-   // Trigger file update after settings change
-   if ($this->generator) {
-       $this->generator->update_llms_file();
-   }
-   
-   return $clean;
-}
+        if (!is_array($value)) {
+            return array();
+        }
+        $clean = array();
+        
+        // Ensure post_types is an array and contains only valid post types
+        $clean['post_types'] = array();
+        if (isset($value['post_types']) && is_array($value['post_types'])) {
+            $valid_types = get_post_types(array('public' => true));
+            foreach ($value['post_types'] as $type) {
+                if (in_array($type, $valid_types) && $type !== 'attachment' && $type !== 'llms_txt') {
+                    $clean['post_types'][] = sanitize_key($type);
+                }
+            }
+        }
+        
+        // Sanitize max posts
+        $clean['max_posts'] = isset($value['max_posts']) ? 
+            min(max(absint($value['max_posts']), 1), 1000) : 100;
+        
+        // Sanitize boolean values
+        $clean['include_meta'] = !empty($value['include_meta']);
+        $clean['include_excerpts'] = !empty($value['include_excerpts']);
+        $clean['include_taxonomies'] = !empty($value['include_taxonomies']);
+        
+        // Sanitize update frequency
+        $clean['update_frequency'] = isset($value['update_frequency']) && 
+            in_array($value['update_frequency'], array('immediate', 'daily', 'weekly')) ? 
+            sanitize_key($value['update_frequency']) : 'immediate';
+        
+        // Trigger file update after settings change
+        if ($this->generator) {
+            $this->generator->update_llms_file();
+        }
+        
+        return $clean;
+    }
 
     public function enqueue_admin_scripts($hook) {
         if ('toplevel_page_llms-file-manager' !== $hook) {
             return;
         }
 
+        // Enqueue jQuery UI Sortable
         wp_enqueue_script('jquery-ui-sortable');
+
+        // Enqueue admin styles with dashicons dependency
+        wp_enqueue_style(
+            'llms-admin-styles',
+            LLMS_PLUGIN_URL . 'admin/admin-styles.css',
+            array('dashicons'),
+            LLMS_VERSION
+        );
+
+        // Register and enqueue admin script
+        wp_register_script(
+            'llms-admin-script',
+            LLMS_PLUGIN_URL . 'admin/admin-script.js',
+            array('jquery', 'jquery-ui-sortable'),
+            LLMS_VERSION,
+            true
+        );
+
+        wp_enqueue_script('llms-admin-script');
     }
 
     public function create_post_type() {
@@ -167,21 +187,21 @@ class LLMS_Core {
     }
 
     public function handle_cache_clearing() {
-    if (!current_user_can('manage_options')) {
-        wp_die('Unauthorized');
+        if (!current_user_can('manage_options')) {
+            wp_die('Unauthorized');
+        }
+
+        check_admin_referer('clear_caches', 'clear_caches_nonce');
+        do_action('llms_clear_seo_caches');
+        flush_rewrite_rules();
+
+        wp_safe_redirect(add_query_arg(array(
+            'page' => 'llms-file-manager',
+            'cache_cleared' => 'true',
+            '_wpnonce' => wp_create_nonce('llms_cache_cleared')
+        ), admin_url('admin.php')));
+        exit;
     }
-
-    check_admin_referer('clear_caches', 'clear_caches_nonce');
-    do_action('llms_clear_seo_caches');
-    flush_rewrite_rules();
-
-    wp_safe_redirect(add_query_arg(array(
-        'page' => 'llms-file-manager',
-        'cache_cleared' => 'true',
-        '_wpnonce' => wp_create_nonce('llms_cache_cleared')
-    ), admin_url('admin.php')));
-    exit;
-}
 
     public function get_llms_post() {
         $posts = get_posts(array(
@@ -202,14 +222,14 @@ class LLMS_Core {
         return $vars;
     }
 
-   public function handle_llms_request() {
-    	if (get_query_var('llms_txt')) {
-        	$post = $this->get_llms_post();
-        if ($post) {
-            header('Content-Type: text/plain');
-            echo esc_html($post->post_content);
-            exit;
-        	}
-    	}
-	}
+    public function handle_llms_request() {
+        if (get_query_var('llms_txt')) {
+            $post = $this->get_llms_post();
+            if ($post) {
+                header('Content-Type: text/plain');
+                echo esc_html($post->post_content);
+                exit;
+            }
+        }
+    }
 }

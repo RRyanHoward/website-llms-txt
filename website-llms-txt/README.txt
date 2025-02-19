@@ -1,5 +1,5 @@
 === Website LLMs.txt ===
-Contributors: websitellm
+Contributors: websitellm, ryhowa
 Tags: llm, ai, seo, rankmath, yoast
 Requires at least: 5.8
 Tested up to: 6.7

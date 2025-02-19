@@ -1,0 +1,45 @@
+.sortable-list {
+    max-width: 500px;
+    margin: 20px 0;
+}
+
+.sortable-item {
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #ccd0d4;
+    margin-bottom: 5px;
+    cursor: move;
+    display: flex;
+    align-items: center;
+}
+
+.sortable-item.active {
+    background: #f0f6fc;
+}
+
+.sortable-item label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    cursor: move;
+    flex-grow: 1;
+}
+
+.sortable-item .dashicons-menu {
+    color: #999;
+}
+
+.sortable-item input[type="checkbox"] {
+    cursor: pointer;
+}
+
+.notice.inline {
+    margin: 15px 0;
+}
+
+.llms-bullet-list {
+    list-style-type: disc;
+    margin-left: 20px;
+    margin-bottom: 15px;
+}
+

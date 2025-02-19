@@ -9,7 +9,7 @@
  * Domain Path: /languages
  * Requires at least: 5.8
  * Requires PHP: 7.2
-  * License: GPL v2 or later
+ * License: GPL v2 or later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  */
 
@@ -18,15 +18,10 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
+define('LLMS_VERSION', '2.0.0');
 define('LLMS_PLUGIN_FILE', __FILE__);
 define('LLMS_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('LLMS_PLUGIN_URL', plugin_dir_url(__FILE__));
-
-// Load text domain
-function llms_load_textdomain() {
-    load_plugin_textdomain('website-llms-txt', false, dirname(plugin_basename(__FILE__)) . '/languages');
-}
-add_action('init', 'llms_load_textdomain');
 
 // Initialize plugin
 require_once LLMS_PLUGIN_DIR . 'includes/class-llms-core.php';

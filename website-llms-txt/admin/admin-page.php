@@ -183,7 +183,7 @@ if (isset($_GET['settings-updated']) &&
     <div class="card">
         <h2><?php esc_html_e('Cache Management', 'website-llms-txt'); ?></h2>
         <p><?php esc_html_e('This tool helps ensure your LLMS.txt file is properly reflected in your sitemap by:', 'website-llms-txt'); ?></p>
-        <ul style="list-style-type: disc; margin-left: 20px; margin-bottom: 15px;">
+       	<ul class="llms-bullet-list">
             <li><?php esc_html_e('Clearing sitemap caches', 'website-llms-txt'); ?></li>
             <li><?php esc_html_e('Resetting WordPress rewrite rules', 'website-llms-txt'); ?></li>
             <li><?php esc_html_e('Forcing sitemap regeneration', 'website-llms-txt'); ?></li>
@@ -197,83 +197,3 @@ if (isset($_GET['settings-updated']) &&
         </form>
     </div>
 </div>
-
-<style>
-.sortable-list {
-    max-width: 500px;
-    margin: 20px 0;
-}
-
-.sortable-item {
-    padding: 10px;
-    background: #fff;
-    border: 1px solid #ccd0d4;
-    margin-bottom: 5px;
-    cursor: move;
-    display: flex;
-    align-items: center;
-}
-
-.sortable-item.active {
-    background: #f0f6fc;
-}
-
-.sortable-item label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    cursor: move;
-    flex-grow: 1;
-}
-
-.sortable-item .dashicons-menu {
-    color: #999;
-}
-
-.sortable-item input[type="checkbox"] {
-    cursor: pointer;
-}
-
-.notice.inline {
-    margin: 15px 0;
-}
-</style>
-
-<script>
-jQuery(document).ready(function($) {
-    const $sortable = $("#llms-post-types-sortable");
-    const $form = $("#llms-settings-form");
-
-    // Initialize sortable
-    $sortable.sortable({
-        items: '.sortable-item',
-        axis: 'y',
-        cursor: 'move',
-        handle: 'label',
-        update: function(event, ui) {
-            updateActiveStates();
-        }
-    });
-
-    // Handle checkbox changes
-    $sortable.on('change', 'input[type="checkbox"]', function() {
-        $(this).closest('.sortable-item').toggleClass('active', $(this).is(':checked'));
-    });
-
-    // Update active states
-    function updateActiveStates() {
-        $sortable.find('.sortable-item').each(function() {
-            const $item = $(this);
-            const $checkbox = $item.find('input[type="checkbox"]');
-            $item.toggleClass('active', $checkbox.is(':checked'));
-        });
-    }
-
-    // Ensure proper order on form submission
-    $form.on('submit', function() {
-        // Move unchecked items to the end
-        $sortable.find('.sortable-item:not(.active)').appendTo($sortable);
-        return true;
-    });
-});
-</script>

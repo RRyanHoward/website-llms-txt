@@ -78,11 +78,16 @@ class LLMS_Content_Cleaner {
             return '';
         }
 
-        // FIRST: Remove raw shortcodes before WordPress processes them
-        $content = strip_shortcodes($content);
+        // Store original content
+        $original_content = $content;
+
+        // FIRST: Process shortcodes to get their content
+        $content = do_shortcode($content);
+
+        // SECOND: Remove any remaining raw shortcodes
         $content = preg_replace('/\[[^\]]*\]/', '', $content);
 
-        // SECOND: Convert HTML entities early
+        // THIRD: Convert HTML entities early
         $content = html_entity_decode($content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $content = str_replace(
             array('&hellip;', '&ndash;', '&mdash;', '&nbsp;', '…', '...', '&quot;', '&apos;', '&lt;', '&gt;', '&amp;'),
@@ -90,21 +95,22 @@ class LLMS_Content_Cleaner {
             $content
         );
 
-        // THIRD: Remove any remaining HTML entities
+        // FOURTH: Remove any remaining HTML entities
         $content = preg_replace('/&[a-z0-9#]+;/i', '', $content);
 
-        // FOURTH: Remove page builder content
+        // FIFTH: Remove page builder content
         $content = $this->remove_page_builder_content($content);
         
-        // FIFTH: Clean WordPress content
+        // SIXTH: Clean WordPress content
         $content = $this->clean_wordpress_content($content);
         
-        // SIXTH: Final cleanup
+        // SEVENTH: Final cleanup
         $content = $this->final_cleanup($content);
-        
-        // SEVENTH: Final check for any remaining entities or shortcodes
-        $content = html_entity_decode($content, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $content = preg_replace('/\[[^\]]*\]/', '', $content);
+
+        // If content is empty after cleaning, return original stripped of tags
+        if (trim($content) === '') {
+            return wp_strip_all_tags($original_content, true);
+        }
         
         return $content;
     }
@@ -120,10 +126,6 @@ class LLMS_Content_Cleaner {
         foreach ($this->builder_patterns as $pattern) {
             $content = preg_replace($pattern, '', $content);
         }
-        
-        // Additional shortcode cleanup
-        $content = strip_shortcodes($content);
-        $content = preg_replace('/\[[^\]]*\]/', '', $content);
         
         return $content;
     }
