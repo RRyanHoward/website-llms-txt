@@ -10,19 +10,26 @@ class LLMS_Yoast_Integration {
         add_filter('wpseo_sitemap_index', array($this, 'add_to_index'));
         add_filter('wpseo_sitemap_llms_content', array($this, 'generate_sitemap'));
         add_action('llms_clear_seo_caches', array($this, 'clear_sitemap_cache'));
+        add_filter('query_vars', array($this, 'query_vars'));
+    }
+
+    public function query_vars( $vars ) {
+        $vars[] = 'sitemap';
+        return $vars;
     }
 
     public function add_rewrite_rules() {
-        add_rewrite_rule('llms-sitemap\.xml$', 'index.php?sitemap=llms', 'top');
-        add_filter('query_vars', function($vars) {
-            $vars[] = 'sitemap';
-            return $vars;
-        });
+        global $wp_rewrite;
+        $existing_rules = $wp_rewrite->wp_rewrite_rules();
+        if (!isset($existing_rules['^llms-sitemap\.xml$'])) {
+            add_rewrite_rule('^llms-sitemap\.xml$', 'index.php?sitemap=llms', 'top');
+        }
     }
 
     public function maybe_generate_sitemap() {
     	$sitemap = get_query_var('sitemap');
     	if ($sitemap === 'llms') {
+            status_header(200);
         	header('Content-Type: application/xml; charset=utf-8');
         	echo $this->generate_sitemap();
         	exit;

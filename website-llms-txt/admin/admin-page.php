@@ -3,9 +3,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-$llms_post = (new LLMS_Core())->get_llms_post();
-$file_exists = file_exists(ABSPATH . 'llms.txt');
-$is_auto_generated = $llms_post !== null;
+$latest_post = apply_filters('get_llms_content', '');
 
 // Verify cache cleared nonce and display message
 if (isset($_GET['cache_cleared']) && $_GET['cache_cleared'] === 'true' && 
@@ -31,7 +29,7 @@ if (isset($_GET['settings-updated']) &&
 
     <div class="card">
         <h2><?php esc_html_e('File Status', 'website-llms-txt'); ?></h2>
-        <?php if ($file_exists): ?>
+        <?php if ($latest_post): ?>
             <p><?php esc_html_e('File is being auto-generated based on your settings.', 'website-llms-txt'); ?></p>
             <p><?php esc_html_e('View files:', 'website-llms-txt'); ?></p>
             <ul>
@@ -125,7 +123,18 @@ if (isset($_GET['settings-updated']) &&
                            name="llms_generator_settings[max_posts]" 
                            value="<?php echo esc_attr($settings['max_posts']); ?>"
                            min="1"
-                           max="1000">
+                           max="100000">
+                </label>
+            </p>
+
+            <p>
+                <label>
+                    <?php esc_html_e('Maximum words:', 'website-llms-txt'); ?>
+                    <input type="number"
+                           name="llms_generator_settings[max_words]"
+                           value="<?php echo esc_attr($settings['max_words'] ?? 250); ?>"
+                           min="1"
+                           max="100000">
                 </label>
             </p>
             
