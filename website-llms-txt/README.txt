@@ -4,7 +4,7 @@ Tags: llm, ai, seo, rankmath, yoast
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.2
-Stable tag: 6.1.1
+Stable tag: 6.1.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -63,6 +63,14 @@ You can choose between immediate, daily, or weekly updates in the plugin setting
 
 == Changelog ==
 
+= 6.1.2 =
+
+🔧 Improved: Internationalization (i18n) and Display Logic
+• Resolved several i18n issues by improving translation coverage and context handling.
+• Prevented empty post_content pages from being shown in detailed content view.
+• Fixed incorrect tagline display by properly falling back to site description settings.
+
+These updates improve localization accuracy, content visibility logic, and metadata consistency.
 
 = 6.1.1 =
 
@@ -748,3 +756,12 @@ example.com/llms.txt/ and example.com/ai.txt/.
 • Eliminated `wp_cache_flush()` calls from content processing loop.
 • Prevented unintended flushing of global object cache affecting other plugins.
 • Reading operations no longer interfere with cache integrity.
+
+= 6.1.2 =
+
+🔧 Improved: Internationalization (i18n) and Display Logic
+• Resolved several i18n issues by improving translation coverage and context handling.
+• Prevented empty post_content pages from being shown in detailed content view.
+• Fixed incorrect tagline display by properly falling back to site description settings.
+
+These updates improve localization accuracy, content visibility logic, and metadata consistency.

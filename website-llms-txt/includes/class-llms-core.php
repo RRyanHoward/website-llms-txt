@@ -182,7 +182,7 @@ class LLMS_Core {
     }
 
     public function enqueue_admin_scripts($hook) {
-        if ('toplevel_page_llms-file-manager' !== $hook) {
+        if (!in_array($hook, ['tools_page_llms-file-manager', 'toplevel_page_llms-file-manager'])) {
             return;
         }
 
@@ -214,9 +214,10 @@ class LLMS_Core {
     }
 
     public function add_admin_menu() {
-        add_menu_page(
-            'LLMs.txt Manager',
-            'LLMs.txt',
+        add_submenu_page(
+            'tools.php',
+            'Llms.txt',
+            'Llms.txt',
             'manage_options',
             'llms-file-manager',
             array($this, 'render_admin_page'),
@@ -225,7 +226,7 @@ class LLMS_Core {
     }
 
     public function add_settings_link($links) {
-        $settings_link = '<a href="admin.php?page=llms-file-manager">Settings</a>';
+        $settings_link = '<a href="admin.php?page=llms-file-manager">' . __('Settings', 'website-llms-txt') . '</a>';
         array_unshift($links, $settings_link);
         return $links;
     }

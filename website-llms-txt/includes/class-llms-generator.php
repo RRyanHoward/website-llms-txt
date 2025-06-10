@@ -46,6 +46,43 @@ class LLMS_Generator
         add_filter('get_llms_content', array($this, 'get_llms_content'));
         add_action('init', array($this, 'llms_maybe_create_ai_sitemap_page'));
         add_action('llms_update_llms_file_cron', array($this, 'update_llms_file'));
+        add_action('init', array($this, 'llms_create_txt_cache_table_if_not_exists'), 999);
+        add_action('updates_all_posts', array($this, 'updates_all_posts'), 999);
+    }
+
+    public function llms_create_txt_cache_table_if_not_exists()
+    {
+        global $wpdb;
+
+        $table = $wpdb->prefix . 'llms_txt_cache';
+        $table_exists = $wpdb->get_var( $wpdb->prepare(
+            "SHOW TABLES LIKE %s",
+            $table
+        ));
+
+        if ($table_exists !== $table) {
+            require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+            $charset_collate = $wpdb->get_charset_collate();
+            $sql = "CREATE TABLE $table (
+                `post_id` BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+                `show` TINYINT NULL DEFAULT NULL,
+                `status` VARCHAR(20) DEFAULT NULL,
+                `type` VARCHAR(20) DEFAULT NULL,
+                `title` TEXT DEFAULT NULL,
+                `link` VARCHAR(255) DEFAULT NULL,
+                `sku` VARCHAR(255) DEFAULT NULL,
+                `price` VARCHAR(125) DEFAULT NULL,
+                `excerpts` TEXT DEFAULT NULL,
+                `overview` TEXT DEFAULT NULL,
+                `meta` TEXT DEFAULT NULL,
+                `content` LONGTEXT DEFAULT NULL,
+                `published` DATETIME DEFAULT NULL,
+                `modified` DATETIME DEFAULT NULL
+            ) $charset_collate;";
+
+            dbDelta($sql);
+        }
     }
 
     public function llms_maybe_create_ai_sitemap_page()
@@ -90,7 +127,8 @@ class LLMS_Generator
         }
 
         if (isset($_POST['llms_generator_settings'], $_POST['llms_generator_settings']['update_frequency']) || $force) {
-            $this->update_llms_file();
+            wp_clear_scheduled_hook('llms_update_llms_file_cron');
+            wp_schedule_single_event(time() + 30, 'llms_update_llms_file_cron');
         }
     }
 
@@ -116,7 +154,7 @@ class LLMS_Generator
                 $this->llms_path = $upload_dir['basedir'] . '/' . $this->llms_name . '.llms.txt';
             }
 
-            file_put_contents($this->llms_path, $content, FILE_APPEND | LOCK_EX);
+            file_put_contents($this->llms_path, (string)$content, FILE_APPEND | LOCK_EX);
         }
     }
 
@@ -130,8 +168,51 @@ class LLMS_Generator
         return $content;
     }
 
+    public function updates_all_posts()
+    {
+        global $wpdb;
+        $table_cache = $wpdb->prefix . 'llms_txt_cache';
+        foreach ($this->settings['post_types'] as $post_type) {
+            if ($post_type === 'llms_txt') continue;
+
+            if (defined('WP_CLI') && WP_CLI) {
+                \WP_CLI::log('Processing type: ' . $post_type);
+            }
+
+            $offset = 0;
+            do {
+                $params = [$post_type];
+                $params[] = $this->limit;
+                $params[] = $offset;
+                $params = [$post_type, $this->limit, $offset];
+                $conditions = "WHERE p.post_type = %s AND cache.post_id IS NULL";
+                $joins = " LEFT JOIN {$table_cache} cache ON p.ID = cache.post_id ";
+                $posts = $wpdb->get_results($wpdb->prepare("SELECT p.ID, cache.* FROM {$wpdb->posts} p $joins $conditions ORDER BY p.post_date DESC LIMIT %d OFFSET %d", ...$params));
+
+                if (!empty($posts)) {
+                    foreach ($posts as $cache_post) {
+                        if(!$cache_post->post_id) {
+                            $post = get_post($cache_post->ID);
+                            $this->handle_post_update($cache_post->ID, $post, 'manual');
+                            unset($post);
+                        }
+                    }
+                }
+
+                $offset = $offset + $this->limit;
+            } while (!empty($posts));
+
+            unset($posts);
+
+            if (defined('WP_CLI') && WP_CLI) {
+                \WP_CLI::log('END processing type: ' . $post_type);
+            }
+        }
+    }
+
     public function generate_content()
     {
+        $this->updates_all_posts();
         $this->generate_site_info();
         $this->generate_overview();
         $this->generate_detailed_content();
@@ -150,24 +231,6 @@ class LLMS_Generator
         $output .= "# " . get_bloginfo('name') . "\n\n";
         if ($meta_description) {
             $output .= "> " . $meta_description . "\n\n";
-        } else {
-            $description = get_bloginfo('description');
-            if($description) {
-                $output .= "> " . $description . "\n\n";
-            } else {
-                $front_page_id = get_option('page_on_front');
-                $description = '';
-                if ($front_page_id) {
-                    $description = get_the_excerpt($front_page_id);
-                    if (empty($description)) {
-                        $description = get_post_field('post_content', $front_page_id);
-                    }
-                }
-
-                if($description) {
-                    $output .= "> " . wp_trim_words(strip_tags(preg_replace('/[\x{00A0}\x{200B}\x{200C}\x{200D}\x{FEFF}\x{202A}-\x{202E}\x{2060}]/u', ' ', html_entity_decode($description))), 30, '') . "\n\n";
-                }
-            }
         }
         $output .= "---\n\n";
         $this->write_file(mb_convert_encoding($output, 'UTF-8', 'auto'));
@@ -195,11 +258,11 @@ class LLMS_Generator
     private function generate_overview()
     {
         global $wpdb;
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::log('Start generate overview');
+        }
 
-        $use_yoast    = class_exists('WPSEO_Meta');
-        $use_rankmath = function_exists('rank_math');
-        $aioseo_enabled = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}aioseo_posts'") === "{$wpdb->prefix}aioseo_posts";
-
+        $table_cache = $wpdb->prefix . 'llms_txt_cache';
         foreach ($this->settings['post_types'] as $post_type) {
             if ($post_type === 'llms_txt') continue;
 
@@ -210,58 +273,50 @@ class LLMS_Generator
 
             $offset = 0;
             $i = 0;
+            $exit = false;
 
             do {
-                $joins = '';
-                $conditions = "WHERE p.post_type = %s AND p.post_status = 'publish'";
-                $params = [$post_type];
+                $conditions = " WHERE `type` = %s AND `show`=1 AND `status`='publish' ";
+                $params = [
+                    $post_type,
+                    $this->limit,
+                    $offset
+                ];
 
-                if ($use_yoast) {
-                    $joins .= " LEFT JOIN {$wpdb->postmeta} m1 ON p.ID = m1.post_id AND m1.meta_key = '_yoast_wpseo_meta-robots-noindex' ";
-                    $joins .= " LEFT JOIN {$wpdb->postmeta} m2 ON p.ID = m2.post_id AND m2.meta_key = '_yoast_wpseo_meta-robots-nofollow' ";
-                    $conditions .= " AND (m1.meta_value != '1' OR m1.post_id IS NULL) AND (m2.meta_value != '1' OR m2.post_id IS NULL)";
+                $posts = $wpdb->get_results($wpdb->prepare("SELECT `post_id`, `overview` FROM $table_cache $conditions ORDER BY `published` DESC LIMIT %d OFFSET %d", ...$params));
+                if (defined('WP_CLI') && WP_CLI) {
+                    \WP_CLI::log('Count: ' . count($posts));
+                    \WP_CLI::log($wpdb->prepare("SELECT `post_id`, `overview` FROM $table_cache $conditions ORDER BY `published` DESC LIMIT %d OFFSET %d", ...$params));
                 }
-
-                if ($use_rankmath) {
-                    $joins .= " LEFT JOIN {$wpdb->postmeta} m3 ON p.ID = m3.post_id AND m3.meta_key = 'rank_math_robots' ";
-                    $conditions .= " AND (m3.meta_value NOT LIKE '%noindex%' OR m3.post_id IS NULL)";
-                }
-
-                if ($aioseo_enabled) {
-                    $joins .= " LEFT JOIN {$wpdb->prefix}aioseo_posts aioseo ON p.ID = aioseo.post_id ";
-                    $conditions .= " AND (aioseo.robots_noindex != 1 AND aioseo.robots_nofollow != 1 OR aioseo.post_id IS NULL)";
-                }
-
-                $params[] = $this->limit;
-                $params[] = $offset;
-                $post_ids = $wpdb->get_col($wpdb->prepare("SELECT p.ID FROM {$wpdb->posts} p $joins $conditions ORDER BY p.post_date DESC LIMIT %d OFFSET %d", ...$params));
-
-                if (!empty($post_ids)) {
-                    foreach ($post_ids as $post_id) {
+                if (!empty($posts)) {
+                    $output = '';
+                    foreach ($posts as $data) {
                         if($i > $this->settings['max_posts']) {
-                            break 2;
+                            $exit = true;
+                            break;
                         }
 
-                        $post = get_post($post_id);
-                        $description = $this->get_post_meta_description($post);
-                        if (!$description) {
-                            $fallback_content = $this->remove_shortcodes(apply_filters( 'get_the_excerpt', $post->post_excerpt, $post ) ?: get_the_content(null, false, $post));
-                            $fallback_content = $this->content_cleaner->clean($fallback_content);
-                            $description = wp_trim_words(strip_tags($fallback_content), 20, '...');
+                        if($data->overview) {
+                            $output .= $data->overview;
+                            $i++;
                         }
 
-                        $output = sprintf("- [%s](%s): %s\n", $post->post_title, get_permalink($post->ID), $clean_description = preg_replace('/[\x{00A0}\x{200B}\x{200C}\x{200D}\x{FEFF}]/u', ' ', $description));
-                        $this->write_file(mb_convert_encoding($output, 'UTF-8', 'auto'));
-
-                        unset($description, $fallback_content, $output);
+                        unset($data);
                     }
+
+                    $this->write_file(mb_convert_encoding($output, 'UTF-8', 'auto'));
+                    unset($output);
                 }
 
                 $offset += $this->limit;
 
-            } while (!empty($post_ids));
+            } while (!empty($posts) && !$exit);
 
             $this->write_file(mb_convert_encoding("\n---\n\n", 'UTF-8', 'auto'));
+
+            if (defined('WP_CLI') && WP_CLI) {
+                \WP_CLI::log('End generate overview');
+            }
         }
     }
 
@@ -269,12 +324,14 @@ class LLMS_Generator
     {
         global $wpdb;
 
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::log('Start generate detailed content');
+        }
+
         $output = "#\n" . "# Detailed Content\n\n";
         $this->write_file(mb_convert_encoding($output, 'UTF-8', 'auto'));
 
-        $aioseo_enabled = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}aioseo_posts'") === "{$wpdb->prefix}aioseo_posts";
-        $use_yoast = class_exists('WPSEO_Meta');
-        $use_rankmath = function_exists('rank_math');
+        $table_cache = $wpdb->prefix . 'llms_txt_cache';
 
         foreach ($this->settings['post_types'] as $post_type) {
             if ($post_type === 'llms_txt') continue;
@@ -286,50 +343,87 @@ class LLMS_Generator
             }
 
             $offset = 0;
+            $exit = false;
             $i = 0;
 
             do {
-                $joins = '';
-                $conditions = "WHERE p.post_type = %s AND p.post_status = 'publish'";
-                $params = [$post_type, $this->limit, $offset];
+                $conditions = " WHERE `type` = %s AND `show`=1 AND `status`='publish' ";
+                $params = [
+                    $post_type,
+                    $this->limit,
+                    $offset
+                ];
 
-                if ($use_yoast) {
-                    $joins .= " LEFT JOIN {$wpdb->postmeta} m1 ON p.ID = m1.post_id AND m1.meta_key = '_yoast_wpseo_meta-robots-noindex' ";
-                    $joins .= " LEFT JOIN {$wpdb->postmeta} m2 ON p.ID = m2.post_id AND m2.meta_key = '_yoast_wpseo_meta-robots-nofollow' ";
-                    $conditions .= " AND (m1.meta_value != '1' OR m1.post_id IS NULL) AND (m2.meta_value != '1' OR m2.post_id IS NULL)";
-                }
-
-                if ($use_rankmath) {
-                    $joins .= " LEFT JOIN {$wpdb->postmeta} m3 ON p.ID = m3.post_id AND m3.meta_key = 'rank_math_robots' ";
-                    $conditions .= " AND (m3.meta_value NOT LIKE '%noindex%' OR m3.post_id IS NULL)";
-                }
-
-                if ($aioseo_enabled) {
-                    $joins .= " LEFT JOIN {$wpdb->prefix}aioseo_posts aioseo ON p.ID = aioseo.post_id ";
-                    $conditions .= " AND (aioseo.robots_noindex != 1 AND aioseo.robots_nofollow != 1 OR aioseo.post_id IS NULL)";
-                }
-
-                $post_ids = $wpdb->get_col($wpdb->prepare("SELECT p.ID FROM {$wpdb->posts} p $joins $conditions ORDER BY p.post_date DESC LIMIT %d OFFSET %d", ...$params));
-
-                if (!empty($post_ids)) {
-                    foreach ($post_ids as $post_id) {
+                $posts = $wpdb->get_results($wpdb->prepare("SELECT * FROM $table_cache $conditions ORDER BY `published` DESC LIMIT %d OFFSET %d", ...$params));
+                if (!empty($posts)) {
+                    $output = '';
+                    foreach ($posts as $data) {
+                        if(!$data->content) continue;
                         if($i > $this->settings['max_posts']) {
-                            break 2;
+                            $exit = true;
+                            break;
                         }
 
-                        $post = get_post($post_id);
-                        $content = $this->format_post_content($post);
-                        $this->write_file(mb_convert_encoding($content, 'UTF-8', 'auto'));
+                        if ($this->settings['include_meta']) {
+                            if ($data->meta) {
+                                $output .= "> " . wp_trim_words($data->meta, $this->settings['max_words'] ?? 250, '...') . "\n\n";
+                            }
 
-                        unset($post, $content);
+                            $output .= "- Published: " . esc_html(date('Y-m-d', strtotime($data->published))) . "\n";
+                            $output .= "- Modified: " . esc_html(date('Y-m-d', strtotime($data->modified))) . "\n";
+                            $output .= "- URL: " . esc_html($data->link) . "\n";
+
+                            if($data->sku) {
+                                $output .= '- SKU: ' . esc_html($data->sku) . "\n";
+                            }
+
+                            if($data->price) {
+                                $output .= '- Price: ' . esc_html($data->price) . "\n";
+                            }
+
+                            if ($this->settings['include_taxonomies']) {
+                                $taxonomies = get_object_taxonomies($data->type, 'objects');
+                                foreach ($taxonomies as $tax) {
+                                    $terms = get_the_terms($data->post_id, $tax->name);
+                                    if ($terms && !is_wp_error($terms)) {
+                                        $term_names = wp_list_pluck($terms, 'name');
+                                        $output .= "- " . $tax->labels->name . ": " . implode(', ', $term_names) . "\n";
+                                    }
+                                }
+                            }
+                        }
+
+                        $content = wp_trim_words($data->content, $this->settings['max_words'] ?? 250, '...');
+                        if($content) {
+                            $output .= "\n";
+                        }
+
+                        if ($this->settings['include_excerpts'] && $data->excerpts) {
+                            $output .= $data->excerpts . "\n\n";
+                        }
+
+                        if($content) {
+                            $output .= $content . "\n\n";
+                            $output .= "---\n\n";
+                            $i++;
+                        }
+
+                        unset($data);
                     }
                 }
 
+                $this->write_file(mb_convert_encoding($output, 'UTF-8', 'auto'));
+                unset($output);
+
                 $offset += $this->limit;
 
-            } while (!empty($post_ids));
+            } while (!empty($posts) && !$exit);
 
             $this->write_file(mb_convert_encoding("\n---\n\n", 'UTF-8', 'auto'));
+
+            if (defined('WP_CLI') && WP_CLI) {
+                \WP_CLI::log('End generate detailed content');
+            }
         }
     }
 
@@ -347,71 +441,33 @@ class LLMS_Generator
             . '\x{20D0}-\x{20FF}]/u', '', $text);
     }
 
-    private function format_post_content($post)
-    {
-        $output = "### " . $post->post_title . "\n\n";
-
-        if ($this->settings['include_meta']) {
-            $meta_description = $this->get_post_meta_description($post);
-            if ($meta_description) {
-                $clean_description = preg_replace('/[\x{00A0}\x{200B}\x{200C}\x{200D}\x{FEFF}]/u', ' ', $meta_description);
-                $output .= "> " . wp_trim_words($clean_description, $this->settings['max_words'] ?? 250, '...') . "\n\n";
-            }
-
-            $output .= "- Published: " . get_the_date('Y-m-d', $post) . "\n";
-            $output .= "- Modified: " . get_the_modified_date('Y-m-d', $post) . "\n";
-            $output .= "- URL: " . get_permalink($post) . "\n";
-
-            if (isset($post->post_type) && $post->post_type === 'product') {
-                $sku = get_post_meta($post->ID, '_sku', true);
-                if (!empty($sku)) {
-                    $output .= '- SKU: ' . esc_html($sku) . "\n";
-                }
-
-                $price = get_post_meta($post->ID, '_price', true);
-                $currency = get_option('woocommerce_currency');
-                if (!empty($price)) {
-                    $output .= "- Price: " . number_format((float)$price, 2) . " " . $currency . "\n";
-                }
-            }
-
-            if ($this->settings['include_taxonomies']) {
-                $taxonomies = get_object_taxonomies($post->post_type, 'objects');
-                foreach ($taxonomies as $tax) {
-                    $terms = get_the_terms($post, $tax->name);
-                    if ($terms && !is_wp_error($terms)) {
-                        $term_names = wp_list_pluck($terms, 'name');
-                        $output .= "- " . $tax->labels->name . ": " . implode(', ', $term_names) . "\n";
-                    }
-                }
-            }
-        }
-
-        $output .= "\n";
-
-        if ($this->settings['include_excerpts'] && !empty($post->post_excerpt)) {
-            $output .= $this->remove_shortcodes($post->post_excerpt) . "\n\n";
-        }
-
-        // Clean and add the content
-        $content = wp_trim_words($this->content_cleaner->clean($this->remove_emojis( $this->remove_shortcodes(get_the_content(null, false, $post)))), $this->settings['max_words'] ?? 250, '...');
-        $output .= $content . "\n\n";
-        $output .= "---\n\n";
-
-        return $output;
-    }
-
     private function get_site_meta_description()
     {
         if (class_exists('WPSEO_Options')) {
             return YoastSEO()->meta->for_posts_page()->description;
         } elseif (class_exists('RankMath')) {
             return get_option('rank_math_description');
+        } else {
+            $description = get_bloginfo('description');
+            if ($description) {
+                return get_bloginfo('description');
+            } else {
+                $front_page_id = get_option('page_on_front');
+                $description = '';
+                if ($front_page_id) {
+                    $description = get_the_excerpt($front_page_id);
+                    if (empty($description)) {
+                        $description = get_post_field('post_content', $front_page_id);
+                    }
+                }
+
+                $description = $this->remove_shortcodes(str_replace(']]>', ']]&gt;', apply_filters('the_content', $description)));
+                return wp_trim_words(strip_tags(preg_replace('/[\x{00A0}\x{200B}\x{200C}\x{200D}\x{FEFF}\x{202A}-\x{202E}\x{2060}]/u', ' ', html_entity_decode($description))), 30, '');
+            }
         }
-        return false;
     }
 
-    private function get_post_meta_description($post)
+    private function get_post_meta_description( $post )
     {
         if (class_exists('WPSEO_Meta')) {
             return YoastSEO()->meta->for_post($post->ID)->description;
@@ -432,8 +488,15 @@ class LLMS_Generator
         return false;
     }
 
+    /**
+     * @param int $post_id
+     * @param WP_Post $post
+     * @param $update
+     * @return void
+     */
     public function handle_post_update($post_id, $post, $update)
     {
+        global $wpdb;
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
             return;
         }
@@ -442,7 +505,111 @@ class LLMS_Generator
             return;
         }
 
-        if ($this->settings['update_frequency'] === 'immediate') {
+        $table = $wpdb->prefix . 'llms_txt_cache';
+        $overview = '';
+        $price = '';
+        $sku = '';
+
+        $permalink = get_permalink($post->ID);
+
+        $description = $this->get_post_meta_description( $post );
+        if (!$description) {
+            $fallback_content = $this->remove_shortcodes(apply_filters( 'get_the_excerpt', $post->post_excerpt, $post ) ?: get_the_content(null, false, $post));
+            $fallback_content = $this->content_cleaner->clean($fallback_content);
+            $description = wp_trim_words(strip_tags($fallback_content), 20, '...');
+            if($description) {
+                $overview = sprintf("- [%s](%s): %s\n", $post->post_title, $permalink, preg_replace('/[\x{00A0}\x{200B}\x{200C}\x{200D}\x{FEFF}]/u', ' ', $description));
+            }
+        } else {
+            $overview = sprintf("- [%s](%s): %s\n", $post->post_title, $permalink, preg_replace('/[\x{00A0}\x{200B}\x{200C}\x{200D}\x{FEFF}]/u', ' ', $description));
+        }
+
+        if (isset($post->post_type) && $post->post_type === 'product') {
+            $sku = get_post_meta($post->ID, '_sku', true);
+            $price = get_post_meta($post->ID, '_price', true);
+            $currency = get_option('woocommerce_currency');
+            if (!empty($price)) {
+                $price = number_format((float)$price, 2) . " " . $currency;
+            }
+        }
+
+        $clean_description = '';
+        $meta_description = $this->get_post_meta_description( $post );
+        if ($meta_description) {
+            $clean_description = preg_replace('/[\x{00A0}\x{200B}\x{200C}\x{200D}\x{FEFF}]/u', ' ', $meta_description);
+        }
+
+        $show = 1;
+        $use_yoast = class_exists('WPSEO_Meta');
+        $use_rankmath = function_exists('rank_math');
+        if($use_yoast) {
+            $robots_noindex = get_post_meta($post_id, '_yoast_wpseo_meta-robots-noindex', true);
+            $robots_nofollow = get_post_meta($post_id, '_yoast_wpseo_meta-robots-nofollow', true);
+            if($robots_noindex || $robots_nofollow) {
+                $show = 0;
+            }
+        }
+
+        if ($use_rankmath) {
+            $robots_noindex = get_post_meta($post_id, 'rank_math_robots', true);
+            if($robots_noindex) {
+                $show = 0;
+            }
+        }
+
+        $aioseo_enabled = $wpdb->get_var("SHOW TABLES LIKE '{$wpdb->prefix}aioseo_posts'") === "{$wpdb->prefix}aioseo_posts";
+        if($aioseo_enabled) {
+            $row = $wpdb->get_row("SELECT robots_noindex, robots_nofollow FROM {$wpdb->prefix}aioseo_posts WHERE post_id=" . intval($post_id));
+            if(isset($row->robots_noindex) && $row->robots_noindex) {
+                $show = 0;
+            }
+
+            if(isset($row->robots_nofollow) && $row->robots_nofollow) {
+                $show = 0;
+            }
+        }
+
+        $excerpts = $this->remove_shortcodes($post->post_excerpt);
+        ob_start();
+            echo $this->content_cleaner->clean($this->remove_emojis( $this->remove_shortcodes(do_shortcode(get_the_content(null, false, $post)))));
+        $content = ob_get_contents();
+
+        $wpdb->replace(
+            $table,
+            [
+                'post_id' => $post_id,
+                'show' => $show,
+                'status' => $post->post_status,
+                'type' => $post->post_type,
+                'title' => $post->post_title,
+                'link' => $permalink,
+                'sku' => $sku,
+                'price' => $price,
+                'meta' => $clean_description,
+                'excerpts' => $excerpts,
+                'overview' => $overview,
+                'content' => $content,
+                'published' => get_the_date('Y-m-d', $post),
+                'modified' => get_the_modified_date('Y-m-d', $post),
+            ], [
+                '%d',
+                '%d',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s',
+                '%s'
+            ]
+        );
+
+        if ($this->settings['update_frequency'] === 'immediate' && $update !== 'manual') {
             wp_clear_scheduled_hook('llms_update_llms_file_cron');
             wp_schedule_single_event(time() + 30, 'llms_update_llms_file_cron');
         }
@@ -450,9 +617,17 @@ class LLMS_Generator
 
     public function handle_post_deletion($post_id, $post)
     {
+        global $wpdb;
         if (!$post || $post->post_type === 'revision') {
             return;
         }
+
+        $table = $wpdb->prefix . 'llms_txt_cache';
+        $wpdb->delete($table, [
+            'post_id' => $post_id
+        ], [
+            '%d'
+        ]);
 
         if ($this->settings['update_frequency'] === 'immediate') {
             wp_clear_scheduled_hook('llms_update_llms_file_cron');
@@ -470,6 +645,10 @@ class LLMS_Generator
 
     public function update_llms_file()
     {
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::log('Start');
+        }
+
         $upload_dir = wp_upload_dir();
         $upload_path = $upload_dir['basedir'] . '/llms.txt';
         if (file_exists($upload_path)) {
@@ -480,7 +659,7 @@ class LLMS_Generator
         if (file_exists($upload_path)) {
             unlink($upload_path);
         }
-        $this->generate_content();
+
         if(defined('FLYWHEEL_PLUGIN_DIR')) {
             $file_path = dirname(ABSPATH) . 'www/' . 'llms.txt';
             if (file_exists($file_path)) {
@@ -491,6 +670,12 @@ class LLMS_Generator
             if (file_exists($file_path)) {
                 unlink($file_path);
             }
+        }
+
+        $this->generate_content();
+
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::log('End generate_content event');
         }
 
         if ( ! is_multisite() ) {
@@ -515,6 +700,10 @@ class LLMS_Generator
             wp_update_post($post_data);
         } else {
             wp_insert_post($post_data);
+        }
+
+        if (defined('WP_CLI') && WP_CLI) {
+            \WP_CLI::log('Clear cache event');
         }
 
         do_action('llms_clear_seo_caches');
