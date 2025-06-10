@@ -342,6 +342,10 @@ class LLMS_Generator
                 $this->write_file(mb_convert_encoding($output, 'UTF-8', 'auto'));
             }
 
+            if (defined('WP_CLI') && WP_CLI) {
+                \WP_CLI::log('Generate detailed: ' . $post_type);
+            }
+
             $offset = 0;
             $exit = false;
             $i = 0;
@@ -358,8 +362,8 @@ class LLMS_Generator
                 if (!empty($posts)) {
                     $output = '';
                     foreach ($posts as $data) {
-                        if(!$data->content) continue;
-                        if($i > $this->settings['max_posts']) {
+                        if (!$data->content) continue;
+                        if ($i > $this->settings['max_posts']) {
                             $exit = true;
                             break;
                         }
@@ -373,11 +377,11 @@ class LLMS_Generator
                             $output .= "- Modified: " . esc_html(date('Y-m-d', strtotime($data->modified))) . "\n";
                             $output .= "- URL: " . esc_html($data->link) . "\n";
 
-                            if($data->sku) {
+                            if ($data->sku) {
                                 $output .= '- SKU: ' . esc_html($data->sku) . "\n";
                             }
 
-                            if($data->price) {
+                            if ($data->price) {
                                 $output .= '- Price: ' . esc_html($data->price) . "\n";
                             }
 
@@ -394,21 +398,20 @@ class LLMS_Generator
                         }
 
                         $content = wp_trim_words($data->content, $this->settings['max_words'] ?? 250, '...');
-                        if($content) {
-                            $output .= "\n";
-                        }
+                        $output .= "\n";
 
                         if ($this->settings['include_excerpts'] && $data->excerpts) {
                             $output .= $data->excerpts . "\n\n";
                         }
 
-                        if($content) {
+                        if ($content) {
                             $output .= $content . "\n\n";
-                            $output .= "---\n\n";
-                            $i++;
                         }
 
+                        $output .= "---\n\n";
                         unset($data);
+
+                        $i++;
                     }
                 }
 
@@ -571,7 +574,7 @@ class LLMS_Generator
 
         $excerpts = $this->remove_shortcodes($post->post_excerpt);
         ob_start();
-            echo $this->content_cleaner->clean($this->remove_emojis( $this->remove_shortcodes(do_shortcode(get_the_content(null, false, $post)))));
+        echo $this->content_cleaner->clean($this->remove_emojis( $this->remove_shortcodes(do_shortcode(get_the_content(null, false, $post)))));
         $content = ob_get_contents();
 
         $wpdb->replace(
